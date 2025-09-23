@@ -13,7 +13,7 @@ string(credentialsId: 'sfdc_username', variable: 'SF_USERNAME'),
 string(credentialsId: 'sfdc_instance_url', variable: 'SF_INSTANCE_URL')]) {
 sh '''
 set -e
-echo "Authenticating to Salesforce..."
+echo "Authenticating to Salesforce...Test"
 sfdx auth:jwt:grant --clientid $SF_CLIENT_ID --jwtkeyfile $JWT_KEY --username $SF_USERNAME '''
 }
 }
