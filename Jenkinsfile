@@ -8,7 +8,12 @@ pipeline {
         JWT_KEY_FILE = credentials('SALESFORCE_SERVER_KEY') // Jenkins file credential (private key)
         SFDX_CLI = '/usr/local/bin/sfdx' // Adjust path as needed
     }
-
+  stages {
+        stage('Run Salesforce CLI') {
+            steps {
+                sh 'sfdx --version' // or any other sfdx command
+            }
+        }
     stages {
         stage('Checkout Source') {
             steps {
@@ -54,7 +59,7 @@ pipeline {
             }
         }
     }
-
+  }
     post {
         always {
             sh "${SFDX_CLI} force:org:delete -u test_scratch --noprompt"
