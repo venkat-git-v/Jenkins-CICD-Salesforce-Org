@@ -1,43 +1,63 @@
 pipeline {
-agent { docker { image 'yourorg/sfdx-agent:latest' } }
-options { ansiColor('xterm'); timestamps() }
-stages {
-stage('Checkout') {
-steps { checkout scm }
-}
-stage('Authenticate') {
-steps {
-withCredentials([file(credentialsId: 'sfdc_jwt_key', variable: 'JWT_KEY'),
-string(credentialsId: 'sfdc_client_id', variable: 'SF_CLIENT_ID'),
-string(credentialsId: 'sfdc_username', variable: 'SF_USERNAME'),
-string(credentialsId: 'sfdc_instance_url', variable: 'SF_INSTANCE_URL')]) {
-sh '''
-set -e
-echo "Authenticating to Salesforce...Test"
-sfdx auth:jwt:grant --clientid $SF_CLIENT_ID --jwtkeyfile $JWT_KEY --username $SF_USERNAME '''
-}
-}
-}
-stage('Validate (checkonly)') {
-steps {
-sh 'sfdx force:source:deploy -x manifest/package.xml --checkonly --testlevel RunLocalTests --}
-}
-stage('Deploy to Sandbox') {
-steps {
-sh 'sfdx force:source:deploy -x manifest/package.xml --testlevel RunLocalTests --wait 20'
-}
-}
-stage('Post-Tests & Reports') {
-steps {
-sh 'sfdx force:apex:test:run --resultformat human --wait 20 || true'
-}
-}
-}
-post {
-success { echo 'Deployment succeeded' }
-failure {
-echo 'Deployment failed, creating backup...'
-sh 'sfdx force:mdapi:retrieve -k manifest/package.xml -r ./backup || true'
-}
-}
+    agent any
+
+    environment {
+        SF_CONSUMER_KEY = credentials('SALESFORCE_CONSUMER_KEY')
+        SF_USERNAME = 'your-automation-user@yourdomain.com'
+        SF_LOGIN_URL = 'https://login.salesforce.com'
+        JWT_KEY_FILE = credentials('SALESFORCE_SERVER_KEY') // Jenkins file credential (private key)
+        SFDX_CLI = '/usr/local/bin/sfdx' // Adjust path as needed
+    }
+
+    stages {
+        stage('Checkout Source') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Authorize Salesforce Org via JWT') {
+            steps {
+                sh """
+                ${SFDX_CLI} force:auth:jwt:grant \
+                  --clientid ${SF_CONSUMER_KEY} \
+                  --jwtkeyfile ${JWT_KEY_FILE} \
+                  --username ${SF_USERNAME} \
+                  --instanceurl ${SF_LOGIN_URL} \
+                  --setdefaultusername
+                """
+            }
+        }
+
+        stage('Create Scratch Org') {
+            steps {
+                sh "${SFDX_CLI} force:org:create -f config/project-scratch-def.json -a test_scratch -s"
+            }
+        }
+
+        stage('Push Source to Scratch Org') {
+            steps {
+                sh "${SFDX_CLI} force:source:push -u test_scratch"
+            }
+        }
+
+        stage('Run Apex Tests') {
+            steps {
+                sh "${SFDX_CLI} force:apex:test:run -u test_scratch --wait 10"
+            }
+        }
+
+        stage('Deploy to Staging/Production') {
+            steps {
+                input "Proceed to deploy to destination org?"
+                sh "${SFDX_CLI} force:source:deploy -u DEST_ORG_ALIAS -p force-app/"
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "${SFDX_CLI} force:org:delete -u test_scratch --noprompt"
+        }
+    }
 }
